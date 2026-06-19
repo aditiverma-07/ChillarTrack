@@ -1,14 +1,13 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useForm, Controller } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { Plus, Search, Trash2, Edit3, X, Filter, ChevronDown } from 'lucide-react'
-import { transactionService } from '@/services'
+import { motion } from 'framer-motion'
+import { Plus, Search, Trash2, Edit3 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { useTransactions } from '@/hooks/useTransactions'
+import { useToast } from '@/components/common/Toast'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
-import type { Transaction, TransactionCategory, PaymentMethod } from '@/types'
+import TransactionForm from '@/components/transactions/TransactionForm'
+import type { TransactionFormData } from '@/components/transactions/TransactionForm'
+import type { Transaction, TransactionCategory } from '@/types'
 import { format, parseISO } from 'date-fns'
 
 const CATEGORIES: { value: TransactionCategory; label: string }[] = [
@@ -21,13 +20,6 @@ const CATEGORIES: { value: TransactionCategory; label: string }[] = [
   { value: 'MISCELLANEOUS', label: '🗂️ Miscellaneous' },
 ]
 
-const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: 'CASH', label: '💵 Cash' },
-  { value: 'UPI', label: '📱 UPI' },
-  { value: 'DEBIT_CARD', label: '💳 Debit Card' },
-  { value: 'CREDIT_CARD', label: '💳 Credit Card' },
-]
-
 const CATEGORY_COLORS: Record<string, string> = {
   FOOD_AND_TAPRI: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700',
   TRANSPORT: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700',
@@ -38,103 +30,43 @@ const CATEGORY_COLORS: Record<string, string> = {
   MISCELLANEOUS: 'bg-slate-100 dark:bg-slate-700 text-slate-700',
 }
 
-const schema = z.object({
-  amount: z.number({ invalid_type_error: 'Amount is required' }).positive('Amount must be positive'),
-  category: z.enum(['FOOD_AND_TAPRI', 'TRANSPORT', 'PRINTOUTS_AND_STATIONERY', 'ENTERTAINMENT', 'SHOPPING', 'EDUCATION', 'MISCELLANEOUS']),
-  description: z.string().optional(),
-  transactionDate: z.string().min(1, 'Date is required'),
-  paymentMethod: z.enum(['CASH', 'UPI', 'DEBIT_CARD', 'CREDIT_CARD']),
-})
-
-type FormData = z.infer<typeof schema>
-
 export default function TransactionsPage() {
   const { user } = useAuth()
-  const queryClient = useQueryClient()
+  const toast = useToast()
   const [showModal, setShowModal] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
-  const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<TransactionCategory | ''>('')
-  const [page, setPage] = useState(0)
 
   const currency = user?.currency === 'INR' ? '₹' : user?.currency ?? '₹'
   const fmt = (n: number) => `${currency}${n?.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, search, categoryFilter],
-    queryFn: () => transactionService.getAll({
-      page, size: 20, sortBy: 'transactionDate', direction: 'desc',
-      search: search || undefined,
-      category: categoryFilter || undefined,
-    }),
-    placeholderData: (prev) => prev,
-  })
+  const {
+    transactions, totalPages, totalElements, isLoading,
+    page, setPage, search, setSearch, categoryFilter, setCategoryFilter,
+    createMutation, updateMutation, deleteMutation,
+  } = useTransactions()
 
-  const transactions: Transaction[] = data?.data?.content ?? []
-  const totalPages: number = data?.data?.totalPages ?? 0
-  const totalElements: number = data?.data?.totalElements ?? 0
-
-  const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      transactionDate: new Date().toISOString().slice(0, 16),
-      paymentMethod: 'UPI',
-      category: 'FOOD_AND_TAPRI',
+  const handleSubmit = (data: TransactionFormData) => {
+    if (editTx) {
+      updateMutation.mutate({ id: editTx.id, data }, {
+        onSuccess: () => { setShowModal(false); setEditTx(null); toast.success('Transaction updated!') },
+        onError: () => toast.error('Failed to update transaction'),
+      })
+    } else {
+      createMutation.mutate(data, {
+        onSuccess: () => { setShowModal(false); toast.success('Expense added!') },
+        onError: () => toast.error('Failed to add expense'),
+      })
     }
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (data: FormData) => transactionService.create({
-      ...data,
-      transactionDate: new Date(data.transactionDate).toISOString(),
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
-      setShowModal(false)
-      reset()
-    }
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: FormData }) =>
-      transactionService.update(id, { ...data, transactionDate: new Date(data.transactionDate).toISOString() }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
-      setShowModal(false)
-      setEditTx(null)
-      reset()
-    }
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => transactionService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
-    }
-  })
+  }
 
   const openEdit = (tx: Transaction) => {
     setEditTx(tx)
-    setValue('amount', tx.amount)
-    setValue('category', tx.category)
-    setValue('description', tx.description || '')
-    setValue('transactionDate', tx.transactionDate.slice(0, 16))
-    setValue('paymentMethod', tx.paymentMethod)
     setShowModal(true)
-  }
-
-  const onSubmit = (data: FormData) => {
-    if (editTx) updateMutation.mutate({ id: editTx.id, data })
-    else createMutation.mutate(data)
   }
 
   const closeModal = () => {
     setShowModal(false)
     setEditTx(null)
-    reset()
   }
 
   return (
@@ -225,7 +157,14 @@ export default function TransactionsPage() {
                 </button>
                 <button
                   id={`delete-tx-${tx.id}`}
-                  onClick={() => { if (confirm('Delete this transaction?')) deleteMutation.mutate(tx.id) }}
+                  onClick={() => {
+                    if (confirm('Delete this transaction?')) {
+                      deleteMutation.mutate(tx.id, {
+                        onSuccess: () => toast.success('Transaction deleted'),
+                        onError: () => toast.error('Failed to delete'),
+                      })
+                    }
+                  }}
                   className="btn-ghost !p-2 text-red-500"
                   aria-label="Delete transaction"
                 >
@@ -252,90 +191,14 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
-      <AnimatePresence>
-        {showModal && (
-          <>
-            <motion.div
-              className="fixed inset-0 bg-black/50 z-40"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closeModal}
-            />
-            <motion.div
-              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-md mx-auto"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-            >
-              <div className="card !rounded-2xl">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-bold text-slate-900 dark:text-dark-text">
-                    {editTx ? 'Edit Transaction' : 'Add Expense'}
-                  </h2>
-                  <button onClick={closeModal} className="btn-ghost !p-2" aria-label="Close modal">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSubmit(onSubmit)} id="transaction-form" className="space-y-4">
-                  <div>
-                    <label htmlFor="tx-amount" className="label">Amount (₹)</label>
-                    <input
-                      id="tx-amount"
-                      type="number"
-                      step="0.01"
-                      {...register('amount', { valueAsNumber: true })}
-                      placeholder="Enter amount"
-                      className={`input ${errors.amount ? 'input-error' : ''}`}
-                    />
-                    {errors.amount && <p className="text-red-500 text-xs mt-1">{errors.amount.message}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="tx-category" className="label">Category</label>
-                    <select id="tx-category" {...register('category')} className="input">
-                      {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="tx-description" className="label">Description (optional)</label>
-                    <input
-                      id="tx-description"
-                      type="text"
-                      {...register('description')}
-                      placeholder="What did you spend on?"
-                      className="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="tx-date" className="label">Date & Time</label>
-                    <input id="tx-date" type="datetime-local" {...register('transactionDate')} className="input" />
-                    {errors.transactionDate && <p className="text-red-500 text-xs mt-1">{errors.transactionDate.message}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="tx-payment" className="label">Payment Method</label>
-                    <select id="tx-payment" {...register('paymentMethod')} className="input">
-                      {PAYMENT_METHODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="flex gap-3 pt-2">
-                    <button type="button" onClick={closeModal} className="btn-secondary flex-1">Cancel</button>
-                    <button type="submit" id="save-transaction-btn" disabled={isSubmitting} className="btn-primary flex-1">
-                      {isSubmitting ? 'Saving...' : editTx ? 'Update' : 'Add Expense'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Transaction Form Modal */}
+      <TransactionForm
+        isOpen={showModal}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+        editTransaction={editTx}
+        isSubmitting={createMutation.isPending || updateMutation.isPending}
+      />
     </div>
   )
 }

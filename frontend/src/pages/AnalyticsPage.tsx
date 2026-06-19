@@ -1,18 +1,13 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer
-} from 'recharts'
 import { motion } from 'framer-motion'
 import { BarChart3, TrendingUp, PieChart as PieIcon, Calendar } from 'lucide-react'
-import { dashboardService } from '@/services'
-import LoadingSpinner from '@/components/common/LoadingSpinner'
-import type { AnalyticsData } from '@/types'
 import { useAuth } from '@/context/AuthContext'
-
-const PIE_COLORS = ['#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2', '#64748b']
+import { useAnalytics } from '@/hooks/useDashboard'
+import LoadingSpinner from '@/components/common/LoadingSpinner'
+import SpendingLineChart from '@/components/charts/SpendingLineChart'
+import WeeklyBarChart from '@/components/charts/WeeklyBarChart'
+import CategoryPieChart, { PIE_COLORS } from '@/components/charts/CategoryPieChart'
+import MonthlyAreaChart from '@/components/charts/MonthlyAreaChart'
 
 const TIME_FILTERS = [
   { value: 'weekly', label: 'This Week' },
@@ -37,22 +32,9 @@ export default function AnalyticsPage() {
   const { user } = useAuth()
   const [range, setRange] = useState('monthly')
   const currency = user?.currency === 'INR' ? '₹' : user?.currency ?? '₹'
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['analytics', range],
-    queryFn: () => dashboardService.getAnalytics({ range }),
-  })
-
-  const analytics: AnalyticsData = data?.data
+  const { analytics, isLoading } = useAnalytics(range)
 
   if (isLoading) return <LoadingSpinner className="py-24" />
-
-  const tooltipStyle = {
-    backgroundColor: 'white',
-    border: '1px solid #e2e8f0',
-    borderRadius: '12px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -77,73 +59,20 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Daily Spending Line Chart */}
         <ChartCard title="Daily Spending" icon={TrendingUp}>
-          <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={analytics?.dailySpending ?? []}>
-              <defs>
-                <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${currency}${v}`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${currency}${v}`, 'Spent']} />
-              <Area type="monotone" dataKey="amount" stroke="#2563eb" strokeWidth={2} fill="url(#spendGradient)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          <SpendingLineChart data={analytics?.dailySpending ?? []} currency={currency} />
         </ChartCard>
 
-        {/* Category Pie Chart */}
         <ChartCard title="Spending by Category" icon={PieIcon}>
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie
-                data={analytics?.categoryBreakdown ?? []}
-                dataKey="amount"
-                nameKey="categoryDisplay"
-                cx="50%"
-                cy="50%"
-                outerRadius={90}
-                innerRadius={50}
-                paddingAngle={3}
-              >
-                {analytics?.categoryBreakdown?.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${currency}${v}`, 'Amount']} />
-              <Legend formatter={(value) => <span className="text-xs">{value}</span>} />
-            </PieChart>
-          </ResponsiveContainer>
+          <CategoryPieChart data={analytics?.categoryBreakdown ?? []} currency={currency} />
         </ChartCard>
 
-        {/* Weekly Spending Bar Chart */}
         <ChartCard title="Weekly Spending" icon={BarChart3}>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={analytics?.weeklySpending ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${currency}${v}`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${currency}${v}`, 'Spent']} />
-              <Bar dataKey="amount" fill="#2563eb" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <WeeklyBarChart data={analytics?.weeklySpending ?? []} currency={currency} />
         </ChartCard>
 
-        {/* Monthly Trend Area Chart */}
         <ChartCard title="6-Month Trend" icon={Calendar}>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={analytics?.monthlyTrend ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${currency}${v}`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${currency}${v}`, 'Spent']} />
-              <Line type="monotone" dataKey="amount" stroke="#7c3aed" strokeWidth={2.5} dot={{ fill: '#7c3aed', r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <MonthlyAreaChart data={analytics?.monthlyTrend ?? []} currency={currency} />
         </ChartCard>
       </div>
 

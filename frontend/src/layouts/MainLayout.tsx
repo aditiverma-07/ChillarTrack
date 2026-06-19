@@ -7,8 +7,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
-import { useQuery } from '@tanstack/react-query'
-import { notificationService } from '@/services'
+import { useNotifications } from '@/hooks/useNotifications'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -24,14 +23,7 @@ export default function MainLayout() {
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  const { data: notificationsData } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: notificationService.getAll,
-    refetchInterval: 60000,
-  })
-
-  const unreadCount = notificationsData?.data?.filter((n: { read: boolean }) => !n.read)?.length ?? 0
+  const { unreadCount } = useNotifications()
 
   const handleLogout = async () => {
     await logout()
