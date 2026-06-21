@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 💸 ChillarTrack – Teen-Friendly Pocket Money Micro-Budgeter & Goal Saver
 
 > A full-stack personal finance platform designed for teenagers and college students to track daily expenses, manage budgets, and save toward personal goals.
@@ -283,3 +284,6 @@ MIT License – see [LICENSE](LICENSE) for details.
 ---
 
 Built with ❤️ for Gen-Z India 🇮🇳
+=======
+# ChillarTrack
+>>>>>>> 94c0e5942a0c60747e2a10de27d80e18bff378b2
